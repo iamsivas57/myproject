@@ -1,54 +1,65 @@
 pipeline {
+    agent any
 
     parameters {
         booleanParam(name: 'autoApprove', defaultValue: false, description: 'Automatically run apply after generating plan?')
-    } 
+    }
+
     environment {
         AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_DEFAULT_REGION    = 'ap-south-1'   // change to your AWS region
     }
 
-   agent  any
     stages {
-        stage('checkout') {
+        stage('Checkout') {
             steps {
-                 script{
-                        dir("terraform")
-                        {
-                            git "https://github.com/iamsivas57/myproject.git"
-                        }
-                    }
+                // Clone your GitHub repo
+                git branch: 'main',
+                    credentialsId: 'github-creds',
+                    url: 'https://github.com/iamsivas57/myproject.git'
+            }
+        }
+
+        stage('Terraform Init & Plan') {
+            steps {
+                sh """
+                  terraform init
+                  terraform plan -var aws_region=$AWS_DEFAULT_REGION \
+                                 -var aws_access_key=$AWS_ACCESS_KEY_ID \
+                                 -var aws_secret_key=$AWS_SECRET_ACCESS_KEY \
+                                 -out tfplan
+                  terraform show -no-color tfplan > tfplan.txt
+                """
+            }
+        }
+
+        stage('Approval') {
+            when {
+                not { equals expected: true, actual: params.autoApprove }
+            }
+            steps {
+                script {
+                    def plan = readFile 'tfplan.txt'
+                    input message: "Do you want to apply the plan?",
+                          parameters: [text(name: 'Plan', description: 'Please review the plan', defaultValue: plan)]
                 }
             }
-
-        stage('Plan') {
-            steps {
-                sh 'pwd;cd terraform/ ; terraform init'
-                sh "pwd;cd terraform/ ; terraform plan -out tfplan"
-                sh 'pwd;cd terraform/ ; terraform show -no-color tfplan > tfplan.txt'
-            }
         }
-        stage('Approval') {
-           when {
-               not {
-                   equals expected: true, actual: params.autoApprove
-               }
-           }
 
-           steps {
-               script {
-                    def plan = readFile 'terraform/tfplan.txt'
-                    input message: "Do you want to apply the plan?",
-                    parameters: [text(name: 'Plan', description: 'Please review the plan', defaultValue: plan)]
-               }
-           }
-       }
-
-        stage('Apply') {
+        stage('Terraform Apply') {
             steps {
-                sh "pwd;cd terraform/ ; terraform apply -input=false tfplan"
+                sh "terraform apply -input=false tfplan"
             }
         }
     }
 
-  }
+    post {
+        success {
+            echo '✅ AWS infrastructure provisioned successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed. Check logs for details.'
+        }
+    }
+}
