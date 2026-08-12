@@ -119,7 +119,7 @@ resource "aws_instance" "datab" {
     ami                    = "ami-0b2ac1bf38835e348"
     instance_type          = var.myinstance-type
     subnet_id              = aws_subnet.priv_sub1.id
-    key_name               = "docker"
+    key_name               = "fabia"
     vpc_security_group_ids = [aws_security_group.mysg1.id]
     
 
